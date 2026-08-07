@@ -76,11 +76,18 @@ async function sendMessage() {
             body: JSON.stringify({ message: message, history: currentChatHistory })
         });
 
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (jsonErr) {
+            const text = await response.text();
+            throw new Error('Server returned invalid JSON: ' + text.substring(0, 200));
+        }
+
         removeThinkingIndicator(thinkingId);
 
         if (!response.ok) {
-            throw new Error(data.detail || 'Server error');
+            throw new Error(data.detail || 'Server error: ' + response.status);
         }
 
         const msgType = data.warning ? 'warning' : 'ai';
@@ -90,7 +97,8 @@ async function sendMessage() {
 
     } catch (error) {
         removeThinkingIndicator(thinkingId);
-        appendMessage('error', 'حدث خطأ في الاتصال: ' + error.message);
+        console.error('Chat error:', error);
+        appendMessage('error', '❌ خطأ: ' + error.message);
     }
 
     sendBtn.disabled = false;
@@ -143,14 +151,22 @@ async function fetchNews() {
     container.innerHTML = '<p class="loading-text">جاري جلب أحدث الأخبار...</p>';
     try {
         const res = await fetch('/api/news');
-        if (!res.ok) throw new Error('Failed to fetch');
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error('HTTP ' + res.status + ': ' + errText.substring(0, 200));
+        }
         const news = await res.json();
         container.innerHTML = '';
+        if (!Array.isArray(news) || news.length === 0) {
+            container.innerHTML = '<p class="error-text">لا توجد أخبار متاحة.</p>';
+            return;
+        }
         news.forEach(item => {
             container.innerHTML += '<div class="card"><div class="card-category">' + escapeHtml(item.category) + '</div><h3 class="card-title">' + escapeHtml(item.title) + '</h3><p class="card-summary">' + escapeHtml(item.summary) + '</p><small style="color: var(--text-secondary); display: block; margin-top: 10px;">' + escapeHtml(item.date) + '</small></div>';
         });
     } catch(e) {
-        container.innerHTML = '<p class="error-text">فشل تحميل الأخبار. يرجى المحاولة لاحقاً.</p>';
+        console.error('News error:', e);
+        container.innerHTML = '<p class="error-text">❌ فشل تحميل الأخبار: ' + escapeHtml(e.message) + '</p>';
     }
 }
 
@@ -159,7 +175,10 @@ async function fetchQuiz() {
     container.innerHTML = '<p class="loading-text">جاري إنشاء سؤال جديد...</p>';
     try {
         const res = await fetch('/api/quiz');
-        if (!res.ok) throw new Error('Failed to fetch');
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error('HTTP ' + res.status + ': ' + errText.substring(0, 200));
+        }
         const quiz = await res.json();
         currentQuizAnswer = quiz.correct_answer;
         currentQuizExplanation = quiz.explanation || '';
@@ -171,7 +190,8 @@ async function fetchQuiz() {
 
         container.innerHTML = '<div class="card"><div class="quiz-question">' + escapeHtml(quiz.question) + '</div><div class="quiz-options" id="quizOptions">' + optionsHtml + '</div><div id="quizExplanation" class="quiz-explanation"></div></div>';
     } catch(e) {
-        container.innerHTML = '<p class="error-text">فشل تحميل السؤال. يرجى المحاولة لاحقاً.</p>';
+        console.error('Quiz error:', e);
+        container.innerHTML = '<p class="error-text">❌ فشل تحميل السؤال: ' + escapeHtml(e.message) + '</p>';
     }
 }
 
@@ -196,6 +216,7 @@ function checkQuizAnswer(element, selectedAnswer) {
 }
 
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -227,5 +248,11 @@ mobileToggle.className = 'mobile-menu-toggle';
 mobileToggle.innerHTML = '☰';
 mobileToggle.onclick = () => document.querySelector('.sidebar').classList.toggle('open');
 document.body.appendChild(mobileToggle);
+
+// Check backend health on startup
+fetch('/api/health')
+    .then(r => r.json())
+    .then(data => console.log('Backend health:', data))
+    .catch(e => console.error('Backend not reachable:', e));
 
 loadSavedChat();

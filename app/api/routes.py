@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 from datetime import datetime
 import logging
 
-from app.models import ChatRequest, ChatResponse, ErrorResponse
+from app.models import ChatRequest, ChatResponse
 from app.services.gemini_service import gemini_service
 from app.services.cyber_filter import is_cyber_related, is_malicious_prompt
 from app.config import settings
@@ -10,10 +10,10 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Rate limiting storage (simple in-memory, use Redis in production)
+# Rate limiting storage (simple in-memory)
 request_counts = {}
 
-async def check_rate_limit(client_ip: str, limit_type: str, max_requests: int = 10, window: int = 60):
+def check_rate_limit(client_ip: str, limit_type: str, max_requests: int = 10, window: int = 60):
     """Simple rate limiting check."""
     key = f"{client_ip}:{limit_type}"
     now = datetime.now().timestamp()
@@ -38,7 +38,7 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
     client_ip = request.client.host
 
     try:
-        await check_rate_limit(client_ip, "chat", max_requests=10, window=60)
+        check_rate_limit(client_ip, "chat", max_requests=10, window=60)
     except HTTPException:
         raise
 
@@ -51,7 +51,7 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
 
     # Check for prompt injection attempts
     if is_malicious_prompt(chat_request.message):
-        logger.warning(f"Malicious prompt detected from {client_ip}: {chat_request.message[:100]}")
+        logger.warning(f"Malicious prompt detected from {client_ip}")
         return ChatResponse(
             response="⚠️ تم رصد محاولة حقن أو طلب غير مصرح به. هذا السؤال غير مسموح به لأسباب أمنية.",
             timestamp=datetime.now().isoformat(),
@@ -87,7 +87,7 @@ async def quiz_endpoint(request: Request):
     client_ip = request.client.host
 
     try:
-        await check_rate_limit(client_ip, "quiz", max_requests=5, window=60)
+        check_rate_limit(client_ip, "quiz", max_requests=5, window=60)
     except HTTPException:
         raise
 
@@ -107,7 +107,7 @@ async def news_endpoint(request: Request):
     client_ip = request.client.host
 
     try:
-        await check_rate_limit(client_ip, "news", max_requests=5, window=60)
+        check_rate_limit(client_ip, "news", max_requests=5, window=60)
     except HTTPException:
         raise
 

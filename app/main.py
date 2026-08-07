@@ -1,11 +1,12 @@
+import os
+import logging
+from datetime import datetime
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import os
-import logging
-from datetime import datetime
 
 from app.api.routes import router as api_router
 from app.config import settings
@@ -35,11 +36,13 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-origins = settings.ALLOWED_ORIGINS
+# CORS - allow all in dev, restrict in production
+origins = ["*"]
 if os.getenv("ENV") == "production":
-    origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
-    if not origins or origins == [""]:
-        origins = ["https://yourdomain.com"]
+    allowed = os.getenv("ALLOWED_ORIGINS", "")
+    if allowed:
+        origins = allowed.split(",")
+    logger.info(f"CORS origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,13 +52,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-base_dir = os.path.dirname(__file__)
+# Static files - IMPORTANT: mount BEFORE routes
+base_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(base_dir, "static")
 template_dir = os.path.join(base_dir, "templates")
+
+logger.info(f"Static dir: {static_dir}")
+logger.info(f"Template dir: {template_dir}")
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=template_dir)
 
+# API routes
 app.include_router(api_router)
 
 @app.get("/")
@@ -69,4 +77,5 @@ async def favicon():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
+    logger.info(f"Starting server on port {port}")
     uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=False)
