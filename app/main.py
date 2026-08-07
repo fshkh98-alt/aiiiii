@@ -70,6 +70,10 @@ app.include_router(api_router)
 async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/test")
+async def test_page(request: Request):
+    return templates.TemplateResponse("test.html", {"request": request})
+
 @app.get("/favicon.ico")
 async def favicon():
     return {"message": "No favicon"}

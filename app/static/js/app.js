@@ -11,6 +11,10 @@ const messageCounter = document.getElementById('messageCounter');
 const tabButtons = document.querySelectorAll('.tab-btn');
 const views = document.querySelectorAll('.view');
 
+console.log('=== CyberSentinel AI Loaded ===');
+console.log('Current URL:', window.location.href);
+console.log('API Base:', window.location.origin);
+
 function loadSavedChat() {
     const saved = localStorage.getItem('cyber_chat_history');
     const savedCount = localStorage.getItem('cyber_message_count');
@@ -37,6 +41,7 @@ function saveChat() {
 tabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
         const tab = btn.dataset.tab;
+        console.log('Tab clicked:', tab);
         tabButtons.forEach(b => b.classList.remove('active'));
         views.forEach(v => v.classList.remove('active'));
         btn.classList.add('active');
@@ -53,11 +58,18 @@ userInput.addEventListener('keypress', (e) => {
     }
 });
 
-sendBtn.addEventListener('click', sendMessage);
+sendBtn.addEventListener('click', () => {
+    console.log('Send button clicked');
+    sendMessage();
+});
 
 async function sendMessage() {
     const message = userInput.value.trim();
-    if (!message) return;
+    console.log('Sending message:', message);
+    if (!message) {
+        console.log('Empty message, returning');
+        return;
+    }
 
     appendMessage('user', message);
     currentChatHistory.push({ role: 'user', content: message });
@@ -69,26 +81,37 @@ async function sendMessage() {
     const thinkingId = showThinkingIndicator();
     sendBtn.disabled = true;
 
+    const apiUrl = window.location.origin + '/api/chat';
+    console.log('Fetching from:', apiUrl);
+    console.log('History length:', currentChatHistory.length);
+
     try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message, history: currentChatHistory })
         });
 
-        let data;
-        try {
-            data = await response.json();
-        } catch (jsonErr) {
-            const text = await response.text();
-            throw new Error('Server returned invalid JSON: ' + text.substring(0, 200));
-        }
+        console.log('Response status:', response.status);
+        console.log('Response headers:', [...response.headers.entries()]);
+
+        const responseText = await response.text();
+        console.log('Response text:', responseText.substring(0, 500));
 
         removeThinkingIndicator(thinkingId);
 
         if (!response.ok) {
-            throw new Error(data.detail || 'Server error: ' + response.status);
+            throw new Error('HTTP ' + response.status + ': ' + responseText.substring(0, 200));
         }
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (jsonErr) {
+            throw new Error('Invalid JSON: ' + responseText.substring(0, 200));
+        }
+
+        console.log('Parsed data:', data);
 
         const msgType = data.warning ? 'warning' : 'ai';
         appendMessage(msgType, data.response);
@@ -96,8 +119,8 @@ async function sendMessage() {
         saveChat();
 
     } catch (error) {
+        console.error('FULL ERROR:', error);
         removeThinkingIndicator(thinkingId);
-        console.error('Chat error:', error);
         appendMessage('error', '❌ خطأ: ' + error.message);
     }
 
@@ -147,15 +170,22 @@ userInput.addEventListener('input', () => {
 });
 
 async function fetchNews() {
+    console.log('Fetching news...');
     const container = document.getElementById('newsContainer');
     container.innerHTML = '<p class="loading-text">جاري جلب أحدث الأخبار...</p>';
     try {
-        const res = await fetch('/api/news');
+        const apiUrl = window.location.origin + '/api/news';
+        console.log('News API URL:', apiUrl);
+        const res = await fetch(apiUrl);
+        console.log('News response status:', res.status);
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error('HTTP ' + res.status + ': ' + errText.substring(0, 200));
         }
         const news = await res.json();
+        console.log('News data:', news);
+
         container.innerHTML = '';
         if (!Array.isArray(news) || news.length === 0) {
             container.innerHTML = '<p class="error-text">لا توجد أخبار متاحة.</p>';
@@ -171,21 +201,28 @@ async function fetchNews() {
 }
 
 async function fetchQuiz() {
+    console.log('Fetching quiz...');
     const container = document.getElementById('quizContainer');
     container.innerHTML = '<p class="loading-text">جاري إنشاء سؤال جديد...</p>';
     try {
-        const res = await fetch('/api/quiz');
+        const apiUrl = window.location.origin + '/api/quiz';
+        console.log('Quiz API URL:', apiUrl);
+        const res = await fetch(apiUrl);
+        console.log('Quiz response status:', res.status);
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error('HTTP ' + res.status + ': ' + errText.substring(0, 200));
         }
         const quiz = await res.json();
+        console.log('Quiz data:', quiz);
+
         currentQuizAnswer = quiz.correct_answer;
         currentQuizExplanation = quiz.explanation || '';
 
         let optionsHtml = '';
         quiz.options.forEach(opt => {
-            optionsHtml += '<div class="quiz-option" onclick="checkQuizAnswer(this, '' + escapeHtml(opt).replace(/'/g, "\'") + '')">' + escapeHtml(opt) + '</div>';
+            optionsHtml += '<div class="quiz-option" onclick="checkQuizAnswer(this, '' + escapeHtml(opt).replace(/'/g, "\\'") + '')">' + escapeHtml(opt) + '</div>';
         });
 
         container.innerHTML = '<div class="card"><div class="quiz-question">' + escapeHtml(quiz.question) + '</div><div class="quiz-options" id="quizOptions">' + optionsHtml + '</div><div id="quizExplanation" class="quiz-explanation"></div></div>';
@@ -223,6 +260,7 @@ function escapeHtml(text) {
 }
 
 document.getElementById('newChatBtn').addEventListener('click', () => {
+    console.log('New chat clicked');
     currentChatHistory = [];
     messageCount = 0;
     messageCounter.textContent = '0 رسالة';
@@ -231,8 +269,15 @@ document.getElementById('newChatBtn').addEventListener('click', () => {
     chatContainer.innerHTML = '<div class="message ai-message"><div class="message-content"><p>مرحباً! أنا CyberSentinel AI. كيف يمكنني مساعدتك في مجال الأمن السيبراني اليوم؟</p></div></div>';
 });
 
-document.getElementById('refreshNewsBtn').addEventListener('click', fetchNews);
-document.getElementById('newQuizBtn').addEventListener('click', fetchQuiz);
+document.getElementById('refreshNewsBtn').addEventListener('click', () => {
+    console.log('Refresh news clicked');
+    fetchNews();
+});
+
+document.getElementById('newQuizBtn').addEventListener('click', () => {
+    console.log('New quiz clicked');
+    fetchQuiz();
+});
 
 document.getElementById('searchInput').addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase();
@@ -250,9 +295,15 @@ mobileToggle.onclick = () => document.querySelector('.sidebar').classList.toggle
 document.body.appendChild(mobileToggle);
 
 // Check backend health on startup
-fetch('/api/health')
-    .then(r => r.json())
-    .then(data => console.log('Backend health:', data))
-    .catch(e => console.error('Backend not reachable:', e));
+const healthUrl = window.location.origin + '/api/health';
+console.log('Checking health at:', healthUrl);
+fetch(healthUrl)
+    .then(r => {
+        console.log('Health response status:', r.status);
+        return r.json();
+    })
+    .then(data => console.log('✅ Backend health:', data))
+    .catch(e => console.error('❌ Backend not reachable:', e));
 
 loadSavedChat();
+console.log('=== Initialization Complete ===');
