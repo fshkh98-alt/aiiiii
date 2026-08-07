@@ -8,73 +8,64 @@ from app.models import Message
 
 logger = logging.getLogger(__name__)
 
-# Check if API key is configured
-if not settings.GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY is not set!")
-else:
-    try:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        logger.info("Gemini API configured successfully")
-
-        # List available models
-        models = genai.list_models()
-        available_models = [m.name for m in models]
-        logger.info(f"Available Gemini models: {available_models}")
-
-        # Check if our model is available
-        if settings.MODEL_NAME not in available_models:
-            logger.warning(f"Model {settings.MODEL_NAME} not found! Available: {available_models}")
-    except Exception as e:
-        logger.error(f"Failed to configure Gemini: {e}")
+# Available models for fallback
+FALLBACK_MODELS = [
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest", 
+    "gemini-1.5-pro",
+    "gemini-1.5-pro-latest",
+    "gemini-pro",
+    "gemini-1.0-pro",
+]
 
 class GeminiService:
     def __init__(self):
         if not settings.GEMINI_API_KEY:
-            raise Exception("GEMINI_API_KEY is not configured. Please set it in environment variables.")
+            raise Exception("GEMINI_API_KEY is not configured!")
 
-        # Try to find a working model
-        self.model_name = self._get_working_model()
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+
+        # Try to find working model
+        self.model_name = self._find_working_model()
+        logger.info(f"Selected model: {self.model_name}")
 
         self.model = genai.GenerativeModel(
             self.model_name,
             system_instruction=SYSTEM_INSTRUCTION,
             safety_settings=settings.SAFETY_SETTINGS
         )
-        logger.info(f"Gemini model initialized: {self.model_name}")
 
-    def _get_working_model(self):
-        """Find an available model."""
-        preferred_models = [
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro-latest",
-            "gemini-1.5-pro",
-            "gemini-pro",
-            "models/gemini-1.5-flash-latest",
-            "models/gemini-1.5-flash",
-            "models/gemini-pro",
-        ]
+    def _find_working_model(self):
+        """Test each model until one works."""
+        for model_name in FALLBACK_MODELS:
+            try:
+                test_model = genai.GenerativeModel(model_name)
+                # Quick test
+                response = test_model.generate_content("Hi", generation_config={"max_output_tokens": 1})
+                if response and response.text:
+                    logger.info(f"Model {model_name} works!")
+                    return model_name
+            except Exception as e:
+                logger.warning(f"Model {model_name} failed: {e}")
+                continue
 
+        # If none work, try listing available models
         try:
-            available = [m.name for m in genai.list_models()]
-            logger.info(f"Checking available models: {available}")
+            available = genai.list_models()
+            logger.info(f"Available models: {[m.name for m in available]}")
 
-            for model in preferred_models:
-                if model in available:
-                    logger.info(f"Using model: {model}")
-                    return model
-                # Try without 'models/' prefix
-                if model.startswith("models/"):
-                    short_name = model.replace("models/", "")
-                    if short_name in available:
-                        logger.info(f"Using model: {short_name}")
-                        return short_name
+            # Find any gemini model
+            for m in available:
+                if "gemini" in m.name.lower() and "generateContent" in m.supported_generation_methods:
+                    name = m.name.replace("models/", "")
+                    logger.info(f"Using available model: {name}")
+                    return name
         except Exception as e:
             logger.error(f"Failed to list models: {e}")
 
-        # Fallback to the configured model
-        logger.warning(f"Falling back to configured model: {settings.MODEL_NAME}")
-        return settings.MODEL_NAME
+        # Ultimate fallback
+        logger.error("No working model found! Using gemini-pro as last resort.")
+        return "gemini-pro"
 
     def _clean_json_response(self, text: str) -> str:
         text = re.sub(r"```json\s*", "", text)
@@ -87,11 +78,8 @@ class GeminiService:
         try:
             cleaned = self._clean_json_response(text)
             return json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}, text: {text[:200]}")
-            return fallback
         except Exception as e:
-            logger.error(f"Unexpected error parsing JSON: {e}")
+            logger.error(f"JSON parse error: {e}")
             return fallback
 
     async def get_chat_response(self, message: str, history: list[Message]):
@@ -105,87 +93,61 @@ class GeminiService:
             response = chat.send_message(message)
 
             if not response or not response.text:
-                raise Exception("Empty response from Gemini API")
+                raise Exception("Empty response")
 
             return response.text
 
         except Exception as e:
-            logger.error(f"Gemini API Error in chat: {str(e)}")
-            raise Exception(f"Gemini API failed: {str(e)}")
+            logger.error(f"Chat error: {e}")
+            raise Exception(f"{e}")
 
     async def generate_quiz_question(self):
         try:
-            temp_model = genai.GenerativeModel(
-                self.model_name,
-                safety_settings=settings.SAFETY_SETTINGS
-            )
+            temp_model = genai.GenerativeModel(self.model_name)
             response = temp_model.generate_content(QUIZ_PROMPT)
 
             if not response or not response.text:
-                raise Exception("Empty response from Gemini API")
+                raise Exception("Empty response")
 
             result = self._safe_json_loads(response.text)
-
             if not result:
-                return {
-                    "question": "ما هو الهدف الرئيسي من استخدام SIEM؟",
-                    "options": [
-                        "تسريع أداء الشبكة",
-                        "جمع وتحليل السجلات الأمنية في الوقت الفعلي",
-                        "تصميم مواقع الويب",
-                        "إدارة قواعد البيانات"
-                    ],
-                    "correct_answer": "جمع وتحليل السجلات الأمنية في الوقت الفعلي",
-                    "explanation": "SIEM (Security Information and Event Management) يقوم بجمع وتحليل السجلات الأمنية من مصادر متعددة في الوقت الفعلي للكشف عن التهديدات والاستجابة لها."
-                }
+                raise Exception("Invalid JSON response")
 
             return result
 
         except Exception as e:
-            logger.error(f"Gemini API Error in quiz: {str(e)}")
-            raise Exception(f"Failed to generate quiz: {str(e)}")
+            logger.error(f"Quiz error: {e}")
+            raise Exception(f"{e}")
 
     async def generate_cyber_news(self):
         try:
-            temp_model = genai.GenerativeModel(
-                self.model_name,
-                safety_settings=settings.SAFETY_SETTINGS
-            )
+            temp_model = genai.GenerativeModel(self.model_name)
             response = temp_model.generate_content(NEWS_PROMPT)
 
             if not response or not response.text:
-                raise Exception("Empty response from Gemini API")
+                raise Exception("Empty response")
 
             result = self._safe_json_loads(response.text)
-
             if not result or not isinstance(result, list):
-                from datetime import datetime
-                today = datetime.now().strftime("%Y-%m-%d")
-                return [
-                    {
-                        "title": "اكتشاف ثغرة Zero-Day جديدة في أنظمة Windows",
-                        "summary": "أعلنت Microsoft عن وجود ثغرة أمنية خطيرة تسمح بتنفيذ كود عن بُعد. الشركة تعمل على إصدار تحديث أمني عاجل.",
-                        "category": "Zero-Day",
-                        "date": today
-                    },
-                    {
-                        "title": "هجوم ransomware يستهدف قطاع الرعاية الصحية",
-                        "summary": "تعرضت عدة مستشفيات لهجوم ransomware منسق. الهجوم أدى إلى تعطيل الخدمات الطبية وسرقة بيانات المرضى.",
-                        "category": "Ransomware",
-                        "date": today
-                    },
-                    {
-                        "title": "ثغرة في خدمات AWS تكشف بيانات العملاء",
-                        "summary": "اكتشف باحثون أمنيون ثغرة في إعدادات افتراضية لخدمات AWS. AWS أصدرت توجيهات لتصحيح الإعدادات.",
-                        "category": "Cloud Security",
-                        "date": today
-                    }
-                ]
+                raise Exception("Invalid JSON response")
 
             return result
 
         except Exception as e:
-            logger.error(f"Gemini API Error in news: {str(e)}")
-            raise Exception(f"Failed to generate news: {str(e)}")
+            logger.error(f"News error: {e}")
+            raise Exception(f"{e}")
 
-gemini_service = GeminiService()
+# Initialize
+try:
+    gemini_service = GeminiService()
+except Exception as e:
+    logger.error(f"Failed to initialize GeminiService: {e}")
+    # Create dummy service
+    class DummyService:
+        async def get_chat_response(self, *args):
+            return "❌ Service not available. Error: " + str(e)
+        async def generate_quiz_question(self, *args):
+            raise Exception(str(e))
+        async def generate_cyber_news(self, *args):
+            raise Exception(str(e))
+    gemini_service = DummyService()
