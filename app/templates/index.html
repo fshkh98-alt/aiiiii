@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberSentinel AI</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar glassmorphism">
+            <div class="sidebar-header">
+                <h1>CyberSentinel <span class="glow">AI</span></h1>
+                <button id="newChatBtn" class="btn-primary">+ محادثة جديدة</button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="... البحث في المحادثة">
+            </div>
+            <div class="history-list" id="historyList"></div>
+            <div class="sidebar-footer">
+                <div class="nav-tabs">
+                    <button class="tab-btn active" data-tab="chat">المحادثة</button>
+                    <button class="tab-btn" data-tab="news">الأخبار</button>
+                    <button class="tab-btn" data-tab="quiz">الاختبارات</button>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <section id="chatView" class="view active">
+                <div class="chat-header">
+                    <h2>مساعد الأمن السيبراني الذكي</h2>
+                    <span id="messageCounter">0 رسالة</span>
+                </div>
+                <div id="chatContainer" class="chat-container">
+                    <div class="message ai-message">
+                        <div class="message-content">
+                            <p>مرحباً! أنا CyberSentinel AI. كيف يمكنني مساعدتك في مجال الأمن السيبراني اليوم؟</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <div class="input-wrapper glassmorphism">
+                        <textarea id="userInput" placeholder="...اسأل عن أي موضوع في الأمن السيبراني" rows="1"></textarea>
+                        <button id="sendBtn" class="btn-send">إرسال</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="newsView" class="view">
+                <div class="view-header">
+                    <h2>آخر أخبار الأمن السيبراني</h2>
+                    <button id="refreshNewsBtn" class="btn-primary">تحديث الأخبار</button>
+                </div>
+                <div id="newsContainer" class="cards-container">
+                    <p class="loading-text">اضغط على "تحديث الأخبار" لعرض أحدث التهديدات...</p>
+                </div>
+            </section>
+
+            <section id="quizView" class="view">
+                <div class="view-header">
+                    <h2>اختبارات الأمن السيبراني</h2>
+                    <button id="newQuizBtn" class="btn-primary">سؤال جديد</button>
+                </div>
+                <div id="quizContainer" class="quiz-container">
+                    <p class="loading-text">اضغط على "سؤال جديد" لبدء الاختبار...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

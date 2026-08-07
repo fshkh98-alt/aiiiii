@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cybersentinel-ai
+    runtime: docker
+    plan: free
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        value: "https://yourdomain.com"
+    healthCheckPath: /api/health
