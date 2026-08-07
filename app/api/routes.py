@@ -60,7 +60,7 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
         return ChatResponse(
-            response=f"❌ خطأ: {str(e)}\n\nتأكد من:\n1. GEMINI_API_KEY صحيح\n2. API key فعال\n3. رصيد متاح",
+            response=f"❌ خطأ: {str(e)}",
             timestamp=datetime.now().isoformat(),
             warning="error"
         )
@@ -99,10 +99,18 @@ async def news_endpoint(request: Request):
 
 @router.get("/api/health")
 async def health_check():
+    """Health check with actual model info."""
+    model_name = "unknown"
+    try:
+        model_name = gemini_service.model_name
+    except:
+        pass
+
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0",
         "gemini_configured": bool(settings.GEMINI_API_KEY),
-        "model": settings.MODEL_NAME
+        "configured_model": settings.MODEL_NAME,
+        "active_model": model_name
     }
