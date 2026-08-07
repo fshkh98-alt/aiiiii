@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from datetime import datetime
 import logging
+import traceback
 
 from app.models import ChatRequest, ChatResponse
 from app.services.gemini_service import gemini_service
@@ -21,7 +22,6 @@ def check_rate_limit(client_ip: str, limit_type: str, max_requests: int = 10, wi
     if key not in request_counts:
         request_counts[key] = []
 
-    # Remove old requests outside the window
     request_counts[key] = [t for t in request_counts[key] if now - t < window]
 
     if len(request_counts[key]) >= max_requests:
@@ -32,7 +32,7 @@ def check_rate_limit(client_ip: str, limit_type: str, max_requests: int = 10, wi
 
     request_counts[key].append(now)
 
-@router.post("/api/chat", response_model=ChatResponse)
+@router.post("/api/chat")
 async def chat_endpoint(request: Request, chat_request: ChatRequest):
     """Chat endpoint with cybersecurity filtering and rate limiting."""
     client_ip = request.client.host
@@ -42,14 +42,12 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
     except HTTPException:
         raise
 
-    # Validate message length
     if len(chat_request.message) > settings.MAX_MESSAGE_LENGTH:
         raise HTTPException(
             status_code=400,
             detail=f"Message too long. Maximum {settings.MAX_MESSAGE_LENGTH} characters allowed."
         )
 
-    # Check for prompt injection attempts
     if is_malicious_prompt(chat_request.message):
         logger.warning(f"Malicious prompt detected from {client_ip}")
         return ChatResponse(
@@ -58,7 +56,6 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
             warning="security_alert"
         )
 
-    # Check if message is cybersecurity related
     if not is_cyber_related(chat_request.message):
         return ChatResponse(
             response="أنا مساعد متخصص في الأمن السيبراني، لذلك لا أستطيع الإجابة عن الأسئلة خارج هذا المجال. يرجى طرح أسئلة تتعلق بالأمن السيبراني فقط.",
@@ -75,10 +72,13 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
             timestamp=datetime.now().isoformat()
         )
     except Exception as e:
-        logger.error(f"Chat error: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail="حدث خطأ في معالجة طلبك. يرجى المحاولة مرة أخرى."
+        error_msg = f"Chat error: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        # Return actual error for debugging
+        return ChatResponse(
+            response=f"❌ ERROR: {str(e)}\n\nPlease check:\n1. GEMINI_API_KEY is set correctly\n2. API key has valid quota\n3. Model '{settings.MODEL_NAME}' is available",
+            timestamp=datetime.now().isoformat(),
+            warning="error"
         )
 
 @router.get("/api/quiz")
@@ -95,11 +95,14 @@ async def quiz_endpoint(request: Request):
         question = await gemini_service.generate_quiz_question()
         return question
     except Exception as e:
-        logger.error(f"Quiz error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="فشل في إنشاء سؤال الاختبار. يرجى المحاولة لاحقاً."
-        )
+        error_msg = f"Quiz error: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        return {
+            "question": "❌ خطأ في إنشاء السؤال: " + str(e),
+            "options": ["تحقق من GEMINI_API_KEY", "تأكد من صلاحية المفتاح", "تأكد من وجود رصيد", "أعد المحاولة لاحقاً"],
+            "correct_answer": "تحقق من GEMINI_API_KEY",
+            "explanation": f"Error: {str(e)}"
+        }
 
 @router.get("/api/news")
 async def news_endpoint(request: Request):
@@ -115,11 +118,14 @@ async def news_endpoint(request: Request):
         news = await gemini_service.generate_cyber_news()
         return news
     except Exception as e:
-        logger.error(f"News error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="فشل في جلب الأخبار. يرجى المحاولة لاحقاً."
-        )
+        error_msg = f"News error: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        return [{
+            "title": "❌ خطأ في جلب الأخبار",
+            "summary": f"Error: {str(e)}. Please check GEMINI_API_KEY and quota.",
+            "category": "Error",
+            "date": datetime.now().strftime("%Y-%m-%d")
+        }]
 
 @router.get("/api/health")
 async def health_check():
@@ -127,5 +133,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "gemini_configured": bool(settings.GEMINI_API_KEY),
+        "model": settings.MODEL_NAME
     }

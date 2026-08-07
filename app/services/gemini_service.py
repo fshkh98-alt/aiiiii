@@ -1,32 +1,37 @@
 import google.generativeai as genai
 import json
 import re
+import logging
 from app.config import settings
 from app.prompts import SYSTEM_INSTRUCTION, QUIZ_PROMPT, NEWS_PROMPT
 from app.models import Message
-import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+# Check if API key is configured
+if not settings.GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY is not set!")
+else:
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    logger.info("Gemini API configured successfully")
 
 class GeminiService:
     def __init__(self):
+        if not settings.GEMINI_API_KEY:
+            raise Exception("GEMINI_API_KEY is not configured. Please set it in environment variables.")
+
         self.model = genai.GenerativeModel(
             settings.MODEL_NAME,
             system_instruction=SYSTEM_INSTRUCTION,
             safety_settings=settings.SAFETY_SETTINGS
         )
+        logger.info(f"Gemini model initialized: {settings.MODEL_NAME}")
 
     def _clean_json_response(self, text: str) -> str:
         """Clean markdown code blocks and extra whitespace from JSON response."""
-        # Remove markdown code blocks
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)
-        # Remove any text before the first [ or {
         text = re.sub(r"^[^{\[]*", "", text)
-        # Remove any text after the last ] or }
         text = re.sub(r"[^}\]]*$", "", text)
         return text.strip()
 
@@ -45,7 +50,6 @@ class GeminiService:
     async def get_chat_response(self, message: str, history: list[Message]):
         """Get chat response from Gemini with history."""
         try:
-            # Convert Pydantic history to Gemini format
             gemini_history = [
                 {"role": msg.role if msg.role == "user" else "model", "parts": [msg.content]}
                 for msg in history
@@ -61,7 +65,7 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Gemini API Error in chat: {str(e)}")
-            raise Exception(f"Failed to get response: {str(e)}")
+            raise Exception(f"Gemini API failed: {str(e)}")
 
     async def generate_quiz_question(self):
         """Generate a quiz question from Gemini."""
@@ -78,9 +82,8 @@ class GeminiService:
             result = self._safe_json_loads(response.text)
 
             if not result:
-                # Fallback quiz if JSON parsing fails
                 return {
-                    "question": "ما هو الهدف الرئيسي من استخدام SIEM في البنية التحتية للأمن السيبراني؟",
+                    "question": "ما هو الهدف الرئيسي من استخدام SIEM؟",
                     "options": [
                         "تسريع أداء الشبكة",
                         "جمع وتحليل السجلات الأمنية في الوقت الفعلي",
@@ -95,7 +98,7 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Gemini API Error in quiz: {str(e)}")
-            raise Exception("Failed to generate quiz question")
+            raise Exception(f"Failed to generate quiz: {str(e)}")
 
     async def generate_cyber_news(self):
         """Generate cybersecurity news from Gemini."""
@@ -112,25 +115,24 @@ class GeminiService:
             result = self._safe_json_loads(response.text)
 
             if not result or not isinstance(result, list):
-                # Fallback news if JSON parsing fails
                 from datetime import datetime
                 today = datetime.now().strftime("%Y-%m-%d")
                 return [
                     {
                         "title": "اكتشاف ثغرة Zero-Day جديدة في أنظمة Windows",
-                        "summary": "أعلنت Microsoft عن وجود ثغرة أمنية خطيرة تسمح بتنفيذ كود عن بُعد. الشركة تعمل على إصدار تحديث أمني عاجل لجميع الإصدارات المتأثرة.",
+                        "summary": "أعلنت Microsoft عن وجود ثغرة أمنية خطيرة تسمح بتنفيذ كود عن بُعد. الشركة تعمل على إصدار تحديث أمني عاجل.",
                         "category": "Zero-Day",
                         "date": today
                     },
                     {
                         "title": "هجوم ransomware يستهدف قطاع الرعاية الصحية",
-                        "summary": "تعرضت عدة مستشفيات لهجوم ransomware منسق من قبل مجموعة APT معروفة. الهجوم أدى إلى تعطيل الخدمات الطبية وسرقة بيانات المرضى.",
+                        "summary": "تعرضت عدة مستشفيات لهجوم ransomware منسق. الهجوم أدى إلى تعطيل الخدمات الطبية وسرقة بيانات المرضى.",
                         "category": "Ransomware",
                         "date": today
                     },
                     {
                         "title": "ثغرة في خدمات AWS تكشف بيانات العملاء",
-                        "summary": "اكتشف باحثون أمنيون ثغرة في إعدادات افتراضية لخدمات AWS تسمح بالوصول غير المصرح به إلى buckets S3. AWS أصدرت توجيهات لتصحيح الإعدادات.",
+                        "summary": "اكتشف باحثون أمنيون ثغرة في إعدادات افتراضية لخدمات AWS. AWS أصدرت توجيهات لتصحيح الإعدادات.",
                         "category": "Cloud Security",
                         "date": today
                     }
@@ -140,6 +142,6 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Gemini API Error in news: {str(e)}")
-            raise Exception("Failed to generate news")
+            raise Exception(f"Failed to generate news: {str(e)}")
 
 gemini_service = GeminiService()
