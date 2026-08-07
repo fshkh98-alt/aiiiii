@@ -5,8 +5,8 @@ load_dotenv()
 
 class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    # Use the correct model name - gemini-1.5-flash-latest or gemini-pro
-    MODEL_NAME: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-latest")
+    # Use models/gemini-1.5-flash (with models/ prefix for v0.8.3)
+    MODEL_NAME: str = os.getenv("GEMINI_MODEL", "models/gemini-1.5-flash")
     ALLOWED_ORIGINS: list = ["*"]
     MAX_HISTORY_LENGTH: int = 50
     MAX_MESSAGE_LENGTH: int = 2000
