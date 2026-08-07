@@ -12,23 +12,71 @@ logger = logging.getLogger(__name__)
 if not settings.GEMINI_API_KEY:
     logger.error("GEMINI_API_KEY is not set!")
 else:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    logger.info("Gemini API configured successfully")
+    try:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        logger.info("Gemini API configured successfully")
+
+        # List available models
+        models = genai.list_models()
+        available_models = [m.name for m in models]
+        logger.info(f"Available Gemini models: {available_models}")
+
+        # Check if our model is available
+        if settings.MODEL_NAME not in available_models:
+            logger.warning(f"Model {settings.MODEL_NAME} not found! Available: {available_models}")
+    except Exception as e:
+        logger.error(f"Failed to configure Gemini: {e}")
 
 class GeminiService:
     def __init__(self):
         if not settings.GEMINI_API_KEY:
             raise Exception("GEMINI_API_KEY is not configured. Please set it in environment variables.")
 
+        # Try to find a working model
+        self.model_name = self._get_working_model()
+
         self.model = genai.GenerativeModel(
-            settings.MODEL_NAME,
+            self.model_name,
             system_instruction=SYSTEM_INSTRUCTION,
             safety_settings=settings.SAFETY_SETTINGS
         )
-        logger.info(f"Gemini model initialized: {settings.MODEL_NAME}")
+        logger.info(f"Gemini model initialized: {self.model_name}")
+
+    def _get_working_model(self):
+        """Find an available model."""
+        preferred_models = [
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-pro",
+            "gemini-pro",
+            "models/gemini-1.5-flash-latest",
+            "models/gemini-1.5-flash",
+            "models/gemini-pro",
+        ]
+
+        try:
+            available = [m.name for m in genai.list_models()]
+            logger.info(f"Checking available models: {available}")
+
+            for model in preferred_models:
+                if model in available:
+                    logger.info(f"Using model: {model}")
+                    return model
+                # Try without 'models/' prefix
+                if model.startswith("models/"):
+                    short_name = model.replace("models/", "")
+                    if short_name in available:
+                        logger.info(f"Using model: {short_name}")
+                        return short_name
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+
+        # Fallback to the configured model
+        logger.warning(f"Falling back to configured model: {settings.MODEL_NAME}")
+        return settings.MODEL_NAME
 
     def _clean_json_response(self, text: str) -> str:
-        """Clean markdown code blocks and extra whitespace from JSON response."""
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)
         text = re.sub(r"^[^{\[]*", "", text)
@@ -36,7 +84,6 @@ class GeminiService:
         return text.strip()
 
     def _safe_json_loads(self, text: str, fallback=None):
-        """Safely parse JSON with fallback."""
         try:
             cleaned = self._clean_json_response(text)
             return json.loads(cleaned)
@@ -48,7 +95,6 @@ class GeminiService:
             return fallback
 
     async def get_chat_response(self, message: str, history: list[Message]):
-        """Get chat response from Gemini with history."""
         try:
             gemini_history = [
                 {"role": msg.role if msg.role == "user" else "model", "parts": [msg.content]}
@@ -68,10 +114,9 @@ class GeminiService:
             raise Exception(f"Gemini API failed: {str(e)}")
 
     async def generate_quiz_question(self):
-        """Generate a quiz question from Gemini."""
         try:
             temp_model = genai.GenerativeModel(
-                settings.MODEL_NAME,
+                self.model_name,
                 safety_settings=settings.SAFETY_SETTINGS
             )
             response = temp_model.generate_content(QUIZ_PROMPT)
@@ -101,10 +146,9 @@ class GeminiService:
             raise Exception(f"Failed to generate quiz: {str(e)}")
 
     async def generate_cyber_news(self):
-        """Generate cybersecurity news from Gemini."""
         try:
             temp_model = genai.GenerativeModel(
-                settings.MODEL_NAME,
+                self.model_name,
                 safety_settings=settings.SAFETY_SETTINGS
             )
             response = temp_model.generate_content(NEWS_PROMPT)
